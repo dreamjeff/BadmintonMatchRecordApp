@@ -873,7 +873,7 @@ body.match-active #matchMeta {
 }
 
 body.match-active .teams-grid {
-  min-height: 60dvh;
+  min-height: 72dvh;
   gap: 16px;
   align-items: stretch;
 }
@@ -891,7 +891,7 @@ body.match-active .team-panel h3 {
 }
 
 body.match-active .point-number {
-  font-size: clamp(5.2rem, 16vw, 10rem);
+  font-size: clamp(10.4rem, 32vw, 20rem);
   margin-bottom: 14px;
 }
 
