@@ -966,3 +966,388 @@ body.match-active .privacy-note {
     font-size: clamp(1.2rem, 5.2vw, 1.6rem);
   }
 }
+
+/* ============================
+   Team Management / Grouping
+   ============================ */
+.team-manage-card {
+  margin-bottom: 14px;
+}
+
+.team-manage-desc {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.roster-input-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.roster-input h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.roster-add-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.roster-add-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px;
+}
+
+.roster-add-row .btn {
+  flex-shrink: 0;
+}
+
+.player-pool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.player-pool-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 0.94rem;
+}
+
+.player-pool-item.assigned.to-a {
+  border-color: rgba(15, 94, 216, 0.55);
+  background: rgba(15, 94, 216, 0.1);
+}
+
+.player-pool-item.assigned.to-b {
+  border-color: rgba(217, 52, 52, 0.55);
+  background: rgba(217, 52, 52, 0.1);
+}
+
+.player-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-team-tag {
+  flex-shrink: 0;
+  min-width: 22px;
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.player-pool-item.assigned.to-a .player-team-tag {
+  color: #0f5ed8;
+}
+
+.player-pool-item.assigned.to-b .player-team-tag {
+  color: #d93434;
+}
+
+.player-remove-btn {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.player-remove-btn:active {
+  background: var(--tertiary-press);
+}
+
+.grouping-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.grouping-status {
+  margin: 10px 0 0;
+  color: var(--secondary);
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.grouped-teams {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.grouped-team {
+  border-radius: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+}
+
+.grouped-team-a {
+  background: rgba(15, 94, 216, 0.08);
+  border-color: rgba(15, 94, 216, 0.3);
+}
+
+.grouped-team-b {
+  background: rgba(217, 52, 52, 0.08);
+  border-color: rgba(217, 52, 52, 0.3);
+}
+
+.grouped-team h3 {
+  margin: 0 0 8px;
+  font-size: 0.98rem;
+}
+
+.grouped-roster-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+  font-size: 0.92rem;
+}
+
+.grouped-roster-list li {
+  line-height: 1.35;
+}
+
+.grouped-roster-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.team-roster-line {
+  margin: 0 0 10px;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.88rem;
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+body.match-active .team-roster-line {
+  font-size: clamp(0.82rem, 1.6vw, 1rem);
+  margin-bottom: 10px;
+}
+
+@media (max-width: 760px) {
+  .roster-input-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .grouping-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .grouping-actions #resetGroupingBtn {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ============================
+   Random Doubles Rotation Panel
+   ============================ */
+.rotation-panel {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.rotation-panel h3 {
+  margin: 0 0 8px;
+  font-size: 0.96rem;
+}
+
+.rotation-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.rotation-team {
+  border-radius: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+}
+
+.rotation-team-a {
+  background: rgba(15, 94, 216, 0.08);
+  border-color: rgba(15, 94, 216, 0.3);
+}
+
+.rotation-team-b {
+  background: rgba(217, 52, 52, 0.08);
+  border-color: rgba(217, 52, 52, 0.3);
+}
+
+.rotation-team-name {
+  margin: 0;
+  font-weight: 800;
+  font-size: 0.98rem;
+}
+
+.rotation-round {
+  margin: 2px 0 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--secondary);
+}
+
+.rotation-oncourt {
+  margin: 0 0 8px;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.rotation-order-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.rotation-order-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 3px;
+  font-size: 0.88rem;
+}
+
+.rotation-order-list li.done {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.rotation-order-list li.next {
+  font-weight: 800;
+  color: var(--primary);
+}
+
+.rotation-order-empty {
+  list-style: none;
+  margin-left: -20px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.swap-rotation-info {
+  margin: 0 0 16px;
+  text-align: left;
+  background: rgba(47, 111, 91, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.swap-rotation-info p {
+  margin: 0 0 6px;
+  color: var(--ink);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.swap-rotation-info p:last-child {
+  margin-bottom: 0;
+}
+
+.swap-rotation-team strong {
+  color: var(--secondary);
+}
+
+@media (max-width: 760px) {
+  .rotation-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================
+   换人卡 Special Substitution Chooser
+   ============================ */
+.swap-card-content {
+  text-align: left;
+}
+
+.swap-card-content h2 {
+  text-align: center;
+}
+
+.swap-card-hint {
+  margin: 8px 0 14px;
+  color: var(--muted);
+  font-weight: 600;
+  line-height: 1.45;
+  font-size: 0.9rem;
+}
+
+.swap-card-team-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.swap-card-section {
+  margin-bottom: 14px;
+}
+
+.swap-card-label {
+  margin: 0 0 6px;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.swap-card-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.swap-card-option {
+  min-height: 42px;
+  padding: 8px 14px;
+  font-size: 0.92rem;
+}
+
+.btn.swap-card-option.selected,
+.swap-card-team-toggle .btn.selected {
+  background: var(--primary);
+  color: #fff;
+}
+
+.swap-card-empty {
+  margin: 0;
+  color: var(--muted);
+  font-style: italic;
+  font-size: 0.9rem;
+}
+
+.swap-card-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}

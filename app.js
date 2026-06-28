@@ -1,5 +1,6 @@
 const setupCard = document.getElementById("setupCard");
 const scoreCard = document.getElementById("scoreCard");
+const teamManageCard = document.getElementById("teamManageCard");
 const setupForm = document.getElementById("setupForm");
 const recoverMatchBtn = document.getElementById("recoverMatchBtn");
 const recoverMatchHint = document.getElementById("recoverMatchHint");
@@ -40,18 +41,58 @@ const drawResultTitle = document.getElementById("drawResultTitle");
 const drawResultMeta = document.getElementById("drawResultMeta");
 const drawContinueBtn = document.getElementById("drawContinueBtn");
 
+const enableRandomDoubles = document.getElementById("enableRandomDoubles");
+const swapPromptDefaultMsg = document.getElementById("swapPromptDefaultMsg");
+const swapPromptRotationInfo = document.getElementById("swapPromptRotationInfo");
+const rotationPanel = document.getElementById("rotationPanel");
+const rotationTeamAName = document.getElementById("rotationTeamAName");
+const rotationTeamBName = document.getElementById("rotationTeamBName");
+const rotationRoundA = document.getElementById("rotationRoundA");
+const rotationRoundB = document.getElementById("rotationRoundB");
+const rotationOnCourtA = document.getElementById("rotationOnCourtA");
+const rotationOnCourtB = document.getElementById("rotationOnCourtB");
+const rotationOrderA = document.getElementById("rotationOrderA");
+const rotationOrderB = document.getElementById("rotationOrderB");
+
+const swapCardModal = document.getElementById("swapCardModal");
+const swapCardSelfBtn = document.getElementById("swapCardSelfBtn");
+const swapCardOppBtn = document.getElementById("swapCardOppBtn");
+const swapCardOffOptions = document.getElementById("swapCardOffOptions");
+const swapCardOnOptions = document.getElementById("swapCardOnOptions");
+const swapCardConfirmBtn = document.getElementById("swapCardConfirmBtn");
+const swapCardCancelBtn = document.getElementById("swapCardCancelBtn");
+
 let state = null;
 let recoverySnapshot = null;
 let pendingDraw = null;
 let drawRevealTimer = null;
 let pendingComebackDraw = null;
+let pendingSwapCard = null;
 const undoHistory = [];
 const maxUndoSteps = 5;
 const landscapeModeQuery = window.matchMedia("(orientation: landscape) and (max-height: 560px) and (max-width: 980px)");
 
+function cloneRotationTeam(rot) {
+  if (!rot) {
+    return null;
+  }
+  return {
+    round: rot.round,
+    onCourt: [...rot.onCourt],
+    upcoming: [...rot.upcoming],
+    playedThisRound: [...rot.playedThisRound]
+  };
+}
+
 function cloneState(source) {
   return {
-    config: { ...source.config, cards: source.config.cards.map((c) => ({ ...c })) },
+    config: {
+      ...source.config,
+      cards: source.config.cards.map((c) => ({ ...c })),
+      rosters: source.config.rosters
+        ? { A: [...source.config.rosters.A], B: [...source.config.rosters.B] }
+        : null
+    },
     currentGame: source.currentGame,
     points: { ...source.points },
     wins: { ...source.wins },
@@ -68,7 +109,10 @@ function cloneState(source) {
     activeCard: {
       A: source.activeCard.A ? { ...source.activeCard.A } : null,
       B: source.activeCard.B ? { ...source.activeCard.B } : null
-    }
+    },
+    rotation: source.rotation
+      ? { A: cloneRotationTeam(source.rotation.A), B: cloneRotationTeam(source.rotation.B) }
+      : null
   };
 }
 
@@ -88,14 +132,19 @@ function isComebackDrawVisible() {
   return Boolean(comebackDrawModal) && !comebackDrawModal.classList.contains("hidden");
 }
 
+function isSwapCardModalVisible() {
+  return Boolean(swapCardModal) && !swapCardModal.classList.contains("hidden");
+}
+
 function isBlockingOverlayVisible() {
-  return isSwapPromptVisible() || isDrawModalVisible() || isComebackDrawVisible();
+  return isSwapPromptVisible() || isDrawModalVisible() || isComebackDrawVisible() || isSwapCardModalVisible();
 }
 
 function showSwapPrompt() {
   if (!swapPromptModal) {
     return;
   }
+  updateSwapPromptContent();
   swapPromptModal.classList.remove("hidden");
 }
 
@@ -224,9 +273,12 @@ function showDrawModal(team, selectedIndex) {
     }
 
     const selectedCard = pendingDraw.card;
+    const isRdSwapCard = state.config.enableRandomDoubles && state.rotation && isSwapCard(selectedCard);
     const bonusText = selectedCard.bonusPoints > 0 ? `，自己 +${selectedCard.bonusPoints} 分` : "";
     drawResultTitle.textContent = `「${teamName}」抽到：${cardDisplayName(selectedCard)}`;
-    drawResultMeta.textContent = `${selectedCard.text}（持续 ${selectedCard.durationBalls} 球${bonusText}）`;
+    drawResultMeta.textContent = isRdSwapCard
+      ? `${selectedCard.text}（点击继续后选择换人）`
+      : `${selectedCard.text}（持续 ${selectedCard.durationBalls} 球${bonusText}）`;
     drawResultCard.classList.remove("hidden");
     drawContinueBtn.disabled = false;
   }, 700);
@@ -243,6 +295,17 @@ function commitDrawResult() {
   if (state.matchEnded || state.gameLocked || state.drawsLeft[team] <= 0 || state.activeCard[team]) {
     hideDrawModal();
     pendingDraw = null;
+    render();
+    return;
+  }
+
+  // 换人卡 in random doubles: spend the draw, then open the special substitution chooser
+  // instead of applying a timed card effect.
+  if (state.config.enableRandomDoubles && state.rotation && isSwapCard(card)) {
+    state.drawsLeft[team] -= 1;
+    hideDrawModal();
+    pendingDraw = null;
+    openSwapCardChooser(team);
     render();
     return;
   }
@@ -286,12 +349,24 @@ function checkSwapPromptTrigger() {
     return;
   }
 
+  let newMilestones = 0;
   for (const team of ["A", "B"]) {
     const reachedMilestone = Math.floor(state.points[team] / 10);
     const lastMilestone = state.lastSwapMilestone[team];
     if (reachedMilestone > lastMilestone) {
-      state.pendingSwapPrompts += reachedMilestone - lastMilestone;
+      newMilestones += reachedMilestone - lastMilestone;
       state.lastSwapMilestone[team] = reachedMilestone;
+    }
+  }
+
+  if (newMilestones > 0) {
+    state.pendingSwapPrompts += newMilestones;
+    // Random doubles: each 10-point milestone substitutes one player on each team.
+    if (state.config.enableRandomDoubles && state.rotation) {
+      for (let i = 0; i < newMilestones; i += 1) {
+        rotateTeam(state.rotation.A, state.config.rosters.A);
+        rotateTeam(state.rotation.B, state.config.rosters.B);
+      }
     }
   }
 
@@ -336,6 +411,8 @@ function undoLastStep() {
   hideDrawModal();
   hideComebackDrawModal();
   pendingComebackDraw = null;
+  hideSwapCardModal();
+  pendingSwapCard = null;
   syncSwapPromptVisibility();
   render();
   refreshLandscapeMode();
@@ -359,11 +436,15 @@ function restoreRecoveredMatch() {
   teamBLabel.textContent = state.config.teamBName;
 
   setupCard.classList.add("hidden");
+  teamManageCard.classList.add("hidden");
   scoreCard.classList.remove("hidden");
   syncSwapPromptVisibility();
   hideDrawModal();
   pendingDraw = null;
+  hideSwapCardModal();
+  pendingSwapCard = null;
 
+  renderTeamRosterLines();
   render();
   refreshLandscapeMode();
 }
@@ -385,12 +466,14 @@ const DEFAULT_CARDS = [
   { text: "软绵绵卡：对方不能杀球，软压也不行", durationBalls: 5, bonusPoints: 0 },
   { text: "连续发球卡：无论上一轮哪方得分，我方连续发球", durationBalls: 5, bonusPoints: 0 },
   { text: "加人卡：我方任意选择加1人上场，3打2", durationBalls: 5, bonusPoints: 0 },
-  { text: "换人卡：本队可强制执行一次特殊换人（不受10分限制），提供两个换人选项：1）本队换任意一名球员上场；2）指定对方队任意一名球员两个换人轮回内不能上场（被ban的人在排到两个换人轮回后上场）", durationBalls: 1, bonusPoints: 0 },
+  { text: "换人卡：本队可强制执行一次特殊换人（不受10分限制），提供两个换人选项：1）本队换任意一名球员上场；2）指定换下对方队任意一名球员", durationBalls: 1, bonusPoints: 0 },
   { text: "发后场封印卡：对方发球只能发前场，不能发后场", durationBalls: 5, bonusPoints: 0 },
   { text: "发前场封印卡：对方发球只能发后场，不能发前场", durationBalls: 5, bonusPoints: 0 },
   { text: "明牌卡：对方击球前必须大声说出球路（高远/杀/吊/放/勾/扑/抽/挡），被抽或杀球时除外", durationBalls: 5, bonusPoints: 0 },
   { text: "空门卡：对方打来的球落在我方前场发球线之前，对方不得分", durationBalls: 5, bonusPoints: 0 },
-  { text: "空城卡：对方打来的球落在我方双打后场发球线之后，对方不得分", durationBalls: 5, bonusPoints: 0 }
+  { text: "空城卡：对方打来的球落在我方双打后场发球线之后，对方不得分", durationBalls: 5, bonusPoints: 0 },
+  { text: "反手卡：双方全程只能使用反手", durationBalls: 5, bonusPoints: 0 },
+  { text: "换手卡：双方全程只能使用非惯用手", durationBalls: 5, bonusPoints: 0 }
 ];
 
 function sanitizeName(name, fallback) {
@@ -554,18 +637,26 @@ function startMatch(config) {
     comebackDrawTriggered: false,
     totalPointsScored: 0,
     drawsLeft: { A: config.drawsPerTeam, B: config.drawsPerTeam },
-    activeCard: { A: null, B: null }
+    activeCard: { A: null, B: null },
+    rotation:
+      config.enableRandomDoubles && config.rosters
+        ? { A: initRotation(config.rosters.A), B: initRotation(config.rosters.B) }
+        : null
   };
 
   teamALabel.textContent = config.teamAName;
   teamBLabel.textContent = config.teamBName;
 
   setupCard.classList.add("hidden");
+  teamManageCard.classList.add("hidden");
   scoreCard.classList.remove("hidden");
   syncSwapPromptVisibility();
   hideDrawModal();
   pendingDraw = null;
+  hideSwapCardModal();
+  pendingSwapCard = null;
 
+  renderTeamRosterLines();
   render();
   refreshLandscapeMode();
 }
@@ -657,6 +748,9 @@ function render() {
       }
     }
   }
+
+  renderTeamRosterLines();
+  renderRotationPanel();
 }
 
 function checkRoundWinner() {
@@ -737,6 +831,13 @@ function startNextRound() {
   state.activeCard.A = null;
   state.activeCard.B = null;
 
+  if (state.config.enableRandomDoubles && state.config.rosters) {
+    state.rotation = {
+      A: initRotation(state.config.rosters.A),
+      B: initRotation(state.config.rosters.B)
+    };
+  }
+
   syncSwapPromptVisibility();
   hideComebackDrawModal();
   pendingComebackDraw = null;
@@ -758,6 +859,7 @@ function resetMatch() {
   state = null;
   undoHistory.length = 0;
   setupCard.classList.remove("hidden");
+  teamManageCard.classList.remove("hidden");
   scoreCard.classList.add("hidden");
   setupForm.reset();
 
@@ -776,8 +878,10 @@ function resetMatch() {
   syncSwapPromptVisibility();
   hideDrawModal();
   hideComebackDrawModal();
+  hideSwapCardModal();
   pendingDraw = null;
   pendingComebackDraw = null;
+  pendingSwapCard = null;
 
   refreshLandscapeMode();
 }
@@ -801,6 +905,15 @@ setupForm.addEventListener("submit", (event) => {
   const rawDraws = Number.parseInt(document.getElementById("drawsPerTeam").value, 10);
   const drawsPerTeam = Number.isFinite(rawDraws) && rawDraws >= 0 ? rawDraws : 0;
   const ruleEnabled = enableComebackDrawRule ? enableComebackDrawRule.checked : false;
+  const randomDoubles = enableRandomDoubles ? enableRandomDoubles.checked : false;
+  const rosters = getAssignedRosters();
+
+  if (randomDoubles && (rosters.A.length < 2 || rosters.B.length < 2)) {
+    showToast("随机双打模式需要先完成分组，且每队至少 2 名上场队员");
+    teamManageCard.classList.remove("hidden");
+    teamManageCard.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
 
   const config = {
     targetPoints,
@@ -809,7 +922,9 @@ setupForm.addEventListener("submit", (event) => {
     teamBName: sanitizeName(inputTeamBName.value, "红队"),
     drawsPerTeam,
     enableComebackDrawRule: ruleEnabled,
-    cards: collectCards()
+    enableRandomDoubles: randomDoubles,
+    cards: collectCards(),
+    rosters
   };
 
   startMatch(config);
@@ -863,6 +978,19 @@ if (drawContinueBtn) {
   drawContinueBtn.addEventListener("click", commitDrawResult);
 }
 
+if (swapCardSelfBtn) {
+  swapCardSelfBtn.addEventListener("click", () => selectSwapTarget("self"));
+}
+if (swapCardOppBtn) {
+  swapCardOppBtn.addEventListener("click", () => selectSwapTarget("opp"));
+}
+if (swapCardConfirmBtn) {
+  swapCardConfirmBtn.addEventListener("click", confirmSwapCard);
+}
+if (swapCardCancelBtn) {
+  swapCardCancelBtn.addEventListener("click", cancelSwapCard);
+}
+
 if (typeof landscapeModeQuery.addEventListener === "function") {
   landscapeModeQuery.addEventListener("change", refreshLandscapeMode);
 } else if (typeof landscapeModeQuery.addListener === "function") {
@@ -875,7 +1003,548 @@ window.addEventListener("beforeunload", () => {
   recoverySnapshot = null;
   pendingDraw = null;
   pendingComebackDraw = null;
+  pendingSwapCard = null;
   clearDrawRevealTimer();
 });
+
+// ============================
+// Team Management / Random Grouping
+// ============================
+const maleNameInput = document.getElementById("maleNameInput");
+const femaleNameInput = document.getElementById("femaleNameInput");
+const addMaleBtn = document.getElementById("addMaleBtn");
+const addFemaleBtn = document.getElementById("addFemaleBtn");
+const malePlayerList = document.getElementById("malePlayerList");
+const femalePlayerList = document.getElementById("femalePlayerList");
+const maleCount = document.getElementById("maleCount");
+const femaleCount = document.getElementById("femaleCount");
+const assignOneBtn = document.getElementById("assignOneBtn");
+const assignAllBtn = document.getElementById("assignAllBtn");
+const resetGroupingBtn = document.getElementById("resetGroupingBtn");
+const groupingStatus = document.getElementById("groupingStatus");
+const groupTeamALabel = document.getElementById("groupTeamALabel");
+const groupTeamBLabel = document.getElementById("groupTeamBLabel");
+const teamARosterList = document.getElementById("teamARosterList");
+const teamBRosterList = document.getElementById("teamBRosterList");
+const teamARosterLine = document.getElementById("teamARosterLine");
+const teamBRosterLine = document.getElementById("teamBRosterLine");
+
+let playerSeq = 0;
+// Each player: { id, name, gender: "male"|"female", team: "A"|"B"|null }
+const players = [];
+// Alternation pointer used only as a tie-breaker when both teams are balanced.
+let groupingTurn = "A";
+
+function addPlayer(gender, rawName) {
+  const name = String(rawName || "").trim();
+  if (!name) {
+    return;
+  }
+
+  playerSeq += 1;
+  players.push({ id: playerSeq, name, gender, team: null });
+  renderGrouping();
+}
+
+function removePlayer(id) {
+  const index = players.findIndex((p) => p.id === id);
+  if (index === -1) {
+    return;
+  }
+  players.splice(index, 1);
+  renderGrouping();
+}
+
+function resetGrouping() {
+  players.forEach((p) => {
+    p.team = null;
+  });
+  groupingTurn = "A";
+  renderGrouping();
+}
+
+function countByTeam(team, gender) {
+  return players.filter((p) => p.team === team && p.gender === gender).length;
+}
+
+function countTeam(team) {
+  return players.filter((p) => p.team === team).length;
+}
+
+// Pick the team that keeps gender (then overall) counts as balanced as possible.
+function chooseTeam(gender) {
+  const aGender = countByTeam("A", gender);
+  const bGender = countByTeam("B", gender);
+  if (aGender !== bGender) {
+    return aGender < bGender ? "A" : "B";
+  }
+
+  const aTotal = countTeam("A");
+  const bTotal = countTeam("B");
+  if (aTotal !== bTotal) {
+    return aTotal < bTotal ? "A" : "B";
+  }
+
+  return groupingTurn;
+}
+
+// Assign one random unassigned player to a balanced team. Returns false when none remain.
+function assignOnePlayer() {
+  // Draw males first, then females ("按性别分别依次抽选").
+  let pool = players.filter((p) => p.team === null && p.gender === "male");
+  if (pool.length === 0) {
+    pool = players.filter((p) => p.team === null && p.gender === "female");
+  }
+  if (pool.length === 0) {
+    return false;
+  }
+
+  const picked = pool[Math.floor(Math.random() * pool.length)];
+  const team = chooseTeam(picked.gender);
+  picked.team = team;
+  groupingTurn = team === "A" ? "B" : "A";
+
+  return true;
+}
+
+function assignNextPlayer() {
+  if (assignOnePlayer()) {
+    renderGrouping();
+  }
+}
+
+function assignAllPlayers() {
+  let changed = false;
+  while (assignOnePlayer()) {
+    changed = true;
+  }
+  if (changed) {
+    renderGrouping();
+  }
+}
+
+function getAssignedRosters() {
+  return {
+    A: players.filter((p) => p.team === "A").map((p) => p.name),
+    B: players.filter((p) => p.team === "B").map((p) => p.name)
+  };
+}
+
+function renderPool(listEl, gender) {
+  listEl.innerHTML = "";
+  players
+    .filter((p) => p.gender === gender)
+    .forEach((player) => {
+      const li = document.createElement("li");
+      li.className = "player-pool-item";
+      if (player.team) {
+        li.classList.add("assigned", player.team === "A" ? "to-a" : "to-b");
+      }
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "player-name";
+      nameSpan.textContent = player.name;
+
+      const tag = document.createElement("span");
+      tag.className = "player-team-tag";
+      tag.textContent = player.team ? (player.team === "A" ? "蓝" : "红") : "";
+
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "player-remove-btn";
+      removeBtn.setAttribute("aria-label", "删除");
+      removeBtn.textContent = "✕";
+      removeBtn.addEventListener("click", () => removePlayer(player.id));
+
+      li.append(nameSpan, tag, removeBtn);
+      listEl.appendChild(li);
+    });
+}
+
+function renderGroupedRoster(listEl, team) {
+  listEl.innerHTML = "";
+  const members = players.filter((p) => p.team === team);
+  if (members.length === 0) {
+    const li = document.createElement("li");
+    li.className = "grouped-roster-empty";
+    li.textContent = "暂无队员";
+    listEl.appendChild(li);
+    return;
+  }
+
+  members.forEach((player) => {
+    const li = document.createElement("li");
+    li.textContent = `${player.name}（${player.gender === "male" ? "男" : "女"}）`;
+    listEl.appendChild(li);
+  });
+}
+
+function renderGrouping() {
+  const teamAName = sanitizeName(inputTeamAName.value, "蓝队");
+  const teamBName = sanitizeName(inputTeamBName.value, "红队");
+  groupTeamALabel.textContent = teamAName;
+  groupTeamBLabel.textContent = teamBName;
+
+  maleCount.textContent = String(players.filter((p) => p.gender === "male").length);
+  femaleCount.textContent = String(players.filter((p) => p.gender === "female").length);
+
+  renderPool(malePlayerList, "male");
+  renderPool(femalePlayerList, "female");
+  renderGroupedRoster(teamARosterList, "A");
+  renderGroupedRoster(teamBRosterList, "B");
+
+  const total = players.length;
+  const unassigned = players.filter((p) => p.team === null).length;
+  const assigned = total - unassigned;
+
+  assignOneBtn.disabled = unassigned === 0;
+  assignAllBtn.disabled = unassigned === 0;
+  resetGroupingBtn.disabled = assigned === 0;
+
+  if (total === 0) {
+    groupingStatus.textContent = "请先录入队员，再开始随机分组。";
+  } else if (unassigned > 0) {
+    groupingStatus.textContent = `已分配 ${assigned} / ${total} 人，剩余 ${unassigned} 人待分配。`;
+  } else {
+    const a = countTeam("A");
+    const b = countTeam("B");
+    groupingStatus.textContent = `分配完成：${teamAName} ${a} 人 · ${teamBName} ${b} 人，可开始比赛。`;
+  }
+}
+
+// Show the assigned rosters (or the current on-court pair) inside the score panels.
+function renderTeamRosterLines() {
+  const rosters = state && state.config ? state.config.rosters : null;
+  const rotation = state ? state.rotation : null;
+  const randomDoubles = Boolean(state && state.config && state.config.enableRandomDoubles && rotation);
+
+  const lines = {
+    A: { el: teamARosterLine, names: rosters && rosters.A ? rosters.A : [] },
+    B: { el: teamBRosterLine, names: rosters && rosters.B ? rosters.B : [] }
+  };
+
+  for (const team of ["A", "B"]) {
+    const { el, names } = lines[team];
+    if (!el) {
+      continue;
+    }
+    if (randomDoubles && rotation[team]) {
+      el.textContent = `上场：${rotation[team].onCourt.join("、")}`;
+      el.classList.remove("hidden");
+    } else {
+      el.textContent = names.join("、");
+      el.classList.toggle("hidden", names.length === 0);
+    }
+  }
+}
+
+// ============================
+// Random Doubles Rotation
+// ============================
+function shuffleArray(arr) {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+// Build a fresh rotation: 2 random players on court, the rest queued as this round's order.
+function initRotation(teamPlayers) {
+  const shuffled = shuffleArray(teamPlayers);
+  return {
+    round: 1,
+    onCourt: shuffled.slice(0, 2),
+    upcoming: shuffled.slice(2),
+    playedThisRound: shuffled.slice(0, 2)
+  };
+}
+
+// When this round's queue is empty, open the next round: reshuffle everyone not on court.
+function ensureRotationRound(rot, teamPlayers) {
+  if (teamPlayers.length > 2 && rot.upcoming.length === 0) {
+    rot.round += 1;
+    rot.upcoming = shuffleArray(teamPlayers.filter((p) => !rot.onCourt.includes(p)));
+    rot.playedThisRound = [...rot.onCourt];
+  }
+}
+
+// Substitute one player: oldest on court leaves, next in this round's queue comes on.
+function rotateTeam(rot, teamPlayers) {
+  if (!rot || teamPlayers.length <= 2 || rot.upcoming.length === 0) {
+    return;
+  }
+
+  const onPlayer = rot.upcoming.shift();
+  rot.onCourt.shift();
+  rot.onCourt.push(onPlayer);
+  if (!rot.playedThisRound.includes(onPlayer)) {
+    rot.playedThisRound.push(onPlayer);
+  }
+
+  ensureRotationRound(rot, teamPlayers);
+}
+
+// 换人卡: force a special substitution on `targetTeam` (not bound by the 10-point rule).
+// `offPlayer` (on court) leaves and is marked as already-played this round; `onPlayer`
+// (off court) comes on at the SECOND position and is exempt from the played-this-round rule.
+function applySwapCard(targetTeam, offPlayer, onPlayer) {
+  if (!state || !state.rotation || !state.rotation[targetTeam]) {
+    return false;
+  }
+
+  const rot = state.rotation[targetTeam];
+  const teamPlayers = state.config.rosters[targetTeam];
+  if (!rot.onCourt.includes(offPlayer) || rot.onCourt.includes(onPlayer) || !teamPlayers.includes(onPlayer)) {
+    return false;
+  }
+
+  const kept = rot.onCourt.find((p) => p !== offPlayer);
+  rot.onCourt = [kept, onPlayer];
+  // The incoming player no longer waits in this round's queue; the outgoing one is done.
+  rot.upcoming = rot.upcoming.filter((p) => p !== onPlayer && p !== offPlayer);
+  if (!rot.playedThisRound.includes(offPlayer)) {
+    rot.playedThisRound.push(offPlayer);
+  }
+  if (!rot.playedThisRound.includes(onPlayer)) {
+    rot.playedThisRound.push(onPlayer);
+  }
+
+  ensureRotationRound(rot, teamPlayers);
+  return true;
+}
+
+function isSwapCard(card) {
+  return String(card?.text || "").includes("换人卡");
+}
+
+function renderRotationOrder(listEl, rot) {
+  listEl.innerHTML = "";
+  if (!rot || rot.upcoming.length === 0) {
+    const li = document.createElement("li");
+    li.className = "rotation-order-empty";
+    li.textContent = "本轮换人已完成";
+    listEl.appendChild(li);
+    return;
+  }
+
+  rot.upcoming.forEach((name, index) => {
+    const li = document.createElement("li");
+    li.textContent = name;
+    if (index === 0) {
+      li.classList.add("next");
+    }
+    listEl.appendChild(li);
+  });
+}
+
+function renderRotationPanel() {
+  if (!rotationPanel) {
+    return;
+  }
+
+  const active = Boolean(state && state.config && state.config.enableRandomDoubles && state.rotation);
+  rotationPanel.classList.toggle("hidden", !active);
+  if (!active) {
+    return;
+  }
+
+  rotationTeamAName.textContent = state.config.teamAName;
+  rotationTeamBName.textContent = state.config.teamBName;
+  rotationRoundA.textContent = `第 ${state.rotation.A.round} 轮`;
+  rotationRoundB.textContent = `第 ${state.rotation.B.round} 轮`;
+  rotationOnCourtA.textContent = state.rotation.A.onCourt.join("、") || "—";
+  rotationOnCourtB.textContent = state.rotation.B.onCourt.join("、") || "—";
+  renderRotationOrder(rotationOrderA, state.rotation.A);
+  renderRotationOrder(rotationOrderB, state.rotation.B);
+}
+
+// Populate the 10-point swap modal: show the new on-court pairs in random doubles mode.
+function updateSwapPromptContent() {
+  const randomDoubles = Boolean(state && state.config && state.config.enableRandomDoubles && state.rotation);
+
+  if (swapPromptDefaultMsg) {
+    swapPromptDefaultMsg.classList.toggle("hidden", randomDoubles);
+  }
+  if (!swapPromptRotationInfo) {
+    return;
+  }
+
+  if (!randomDoubles) {
+    swapPromptRotationInfo.classList.add("hidden");
+    swapPromptRotationInfo.innerHTML = "";
+    return;
+  }
+
+  swapPromptRotationInfo.classList.remove("hidden");
+  swapPromptRotationInfo.innerHTML = [
+    "<p>已满 10 分，系统已自动换人，本轮上场：</p>",
+    `<p class="swap-rotation-team"><strong>${state.config.teamAName}</strong>：${state.rotation.A.onCourt.join("、")}</p>`,
+    `<p class="swap-rotation-team"><strong>${state.config.teamBName}</strong>：${state.rotation.B.onCourt.join("、")}</p>`
+  ].join("");
+}
+
+// ============================
+// 换人卡 Special Substitution Chooser
+// ============================
+function otherTeam(team) {
+  return team === "A" ? "B" : "A";
+}
+
+function teamName(team) {
+  return team === "A" ? state.config.teamAName : state.config.teamBName;
+}
+
+function benchPlayers(team) {
+  const rot = state.rotation[team];
+  return state.config.rosters[team].filter((p) => !rot.onCourt.includes(p));
+}
+
+function openSwapCardChooser(drawingTeam) {
+  if (!swapCardModal || !state || !state.rotation) {
+    return;
+  }
+  pendingSwapCard = { drawingTeam, targetTeam: drawingTeam, offPlayer: null, onPlayer: null };
+  renderSwapCardChooser();
+  swapCardModal.classList.remove("hidden");
+}
+
+function hideSwapCardModal() {
+  if (swapCardModal) {
+    swapCardModal.classList.add("hidden");
+  }
+}
+
+function buildSwapOptionButton(label, selected, onClick) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn tertiary swap-card-option" + (selected ? " selected" : "");
+  btn.textContent = label;
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+function renderSwapCardChooser() {
+  if (!pendingSwapCard || !state || !state.rotation) {
+    return;
+  }
+
+  const { drawingTeam, targetTeam, offPlayer, onPlayer } = pendingSwapCard;
+
+  if (swapCardSelfBtn) {
+    swapCardSelfBtn.textContent = `换本方（${teamName(drawingTeam)}）`;
+    swapCardSelfBtn.classList.toggle("selected", targetTeam === drawingTeam);
+  }
+  if (swapCardOppBtn) {
+    swapCardOppBtn.textContent = `换对方（${teamName(otherTeam(drawingTeam))}）`;
+    swapCardOppBtn.classList.toggle("selected", targetTeam !== drawingTeam);
+  }
+
+  const rot = state.rotation[targetTeam];
+  const bench = benchPlayers(targetTeam);
+
+  swapCardOffOptions.innerHTML = "";
+  rot.onCourt.forEach((name) => {
+    swapCardOffOptions.appendChild(
+      buildSwapOptionButton(name, name === offPlayer, () => {
+        pendingSwapCard.offPlayer = name;
+        renderSwapCardChooser();
+      })
+    );
+  });
+
+  swapCardOnOptions.innerHTML = "";
+  if (bench.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "swap-card-empty";
+    empty.textContent = "该队没有可上场的替补球员";
+    swapCardOnOptions.appendChild(empty);
+  } else {
+    bench.forEach((name) => {
+      const played = rot.playedThisRound.includes(name);
+      swapCardOnOptions.appendChild(
+        buildSwapOptionButton(played ? `${name}（本轮已上过）` : name, name === onPlayer, () => {
+          pendingSwapCard.onPlayer = name;
+          renderSwapCardChooser();
+        })
+      );
+    });
+  }
+
+  if (swapCardConfirmBtn) {
+    swapCardConfirmBtn.disabled = !(offPlayer && onPlayer);
+  }
+}
+
+function selectSwapTarget(target) {
+  if (!pendingSwapCard) {
+    return;
+  }
+  const next = target === "self" ? pendingSwapCard.drawingTeam : otherTeam(pendingSwapCard.drawingTeam);
+  if (next === pendingSwapCard.targetTeam) {
+    return;
+  }
+  pendingSwapCard.targetTeam = next;
+  pendingSwapCard.offPlayer = null;
+  pendingSwapCard.onPlayer = null;
+  renderSwapCardChooser();
+}
+
+function confirmSwapCard() {
+  if (!pendingSwapCard || !pendingSwapCard.offPlayer || !pendingSwapCard.onPlayer) {
+    return;
+  }
+
+  const { targetTeam, offPlayer, onPlayer } = pendingSwapCard;
+  const applied = applySwapCard(targetTeam, offPlayer, onPlayer);
+  if (applied) {
+    showToast(`换人卡：${teamName(targetTeam)} 换下 ${offPlayer}，${onPlayer} 上场`);
+  }
+
+  pendingSwapCard = null;
+  hideSwapCardModal();
+  render();
+}
+
+function cancelSwapCard() {
+  pendingSwapCard = null;
+  hideSwapCardModal();
+  render();
+}
+
+addMaleBtn.addEventListener("click", () => {
+  addPlayer("male", maleNameInput.value);
+  maleNameInput.value = "";
+  maleNameInput.focus();
+});
+
+addFemaleBtn.addEventListener("click", () => {
+  addPlayer("female", femaleNameInput.value);
+  femaleNameInput.value = "";
+  femaleNameInput.focus();
+});
+
+maleNameInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    addMaleBtn.click();
+  }
+});
+
+femaleNameInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    addFemaleBtn.click();
+  }
+});
+
+assignOneBtn.addEventListener("click", assignNextPlayer);
+assignAllBtn.addEventListener("click", assignAllPlayers);
+resetGroupingBtn.addEventListener("click", resetGrouping);
+inputTeamAName.addEventListener("input", renderGrouping);
+inputTeamBName.addEventListener("input", renderGrouping);
+
+renderGrouping();
 
 refreshRecoveryAvailability();

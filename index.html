@@ -13,6 +13,48 @@
       <p>实时计分 · 单机运行 · 不保存历史</p>
     </header>
 
+    <section id="teamManageCard" class="card team-manage-card">
+      <h2>队伍管理（可选）</h2>
+      <p class="team-manage-desc">录入参赛队员后可随机分组，分组结果将作为下方两队的参赛名单。</p>
+
+      <div class="roster-input-grid">
+        <div class="roster-input">
+          <h3>男生（<span id="maleCount">0</span>）</h3>
+          <div class="roster-add-row">
+            <input id="maleNameInput" type="text" maxlength="12" placeholder="输入男生姓名" autocomplete="off">
+            <button id="addMaleBtn" type="button" class="btn secondary compact">添加</button>
+          </div>
+          <ul id="malePlayerList" class="player-pool-list"></ul>
+        </div>
+        <div class="roster-input">
+          <h3>女生（<span id="femaleCount">0</span>）</h3>
+          <div class="roster-add-row">
+            <input id="femaleNameInput" type="text" maxlength="12" placeholder="输入女生姓名" autocomplete="off">
+            <button id="addFemaleBtn" type="button" class="btn secondary compact">添加</button>
+          </div>
+          <ul id="femalePlayerList" class="player-pool-list"></ul>
+        </div>
+      </div>
+
+      <div class="grouping-actions">
+        <button id="assignOneBtn" type="button" class="btn primary" disabled>随机分配下一名</button>
+        <button id="assignAllBtn" type="button" class="btn secondary" disabled>一键全部分配</button>
+        <button id="resetGroupingBtn" type="button" class="btn tertiary compact" disabled>重置分组</button>
+      </div>
+      <p id="groupingStatus" class="grouping-status">请先录入队员，再开始随机分组。</p>
+
+      <div class="grouped-teams">
+        <div class="grouped-team grouped-team-a">
+          <h3 id="groupTeamALabel">蓝队</h3>
+          <ul id="teamARosterList" class="grouped-roster-list"></ul>
+        </div>
+        <div class="grouped-team grouped-team-b">
+          <h3 id="groupTeamBLabel">红队</h3>
+          <ul id="teamBRosterList" class="grouped-roster-list"></ul>
+        </div>
+      </div>
+    </section>
+
     <section id="setupCard" class="card setup-card">
       <h2>开局设置</h2>
       <form id="setupForm" class="setup-form">
@@ -46,6 +88,11 @@
           「逆风抽卡规则」（落后队在最后10分关键时刻如果落后10分将自动获得一次额外抽卡机会）
         </label>
 
+        <label class="form-full">
+          <input id="enableRandomDoubles" type="checkbox">
+          「随机双打模式」（需先完成队伍分组：每队上场两人，每满 10 分系统自动换人，公平轮换上场）
+        </label>
+
         <button type="submit" class="btn primary large">开始比赛</button>
       </form>
       <div class="cards-setup-section">
@@ -73,6 +120,7 @@
       <div class="teams-grid">
         <article class="team-panel" data-team="A">
           <h3 id="teamALabel">红队</h3>
+          <p class="team-roster-line hidden" id="teamARosterLine"></p>
           <div class="point-number" id="teamAPoints">0</div>
           <div class="active-card-wrap hidden" id="teamACardWrap">
             <p class="active-card-text" id="teamACardText"></p>
@@ -87,6 +135,7 @@
 
         <article class="team-panel" data-team="B">
           <h3 id="teamBLabel">蓝队</h3>
+          <p class="team-roster-line hidden" id="teamBRosterLine"></p>
           <div class="point-number" id="teamBPoints">0</div>
           <div class="active-card-wrap hidden" id="teamBCardWrap">
             <p class="active-card-text" id="teamBCardText"></p>
@@ -99,6 +148,30 @@
           <p class="game-wins">已赢局数：<span id="teamBWins">0</span></p>
         </article>
       </div>
+
+      <section id="rotationPanel" class="rotation-panel hidden" aria-live="polite">
+        <h3>随机双打 · 上场轮换</h3>
+        <div class="rotation-grid">
+          <div class="rotation-team rotation-team-a">
+            <p class="rotation-team-name" id="rotationTeamAName">蓝队</p>
+            <p class="rotation-round" id="rotationRoundA">第 1 轮</p>
+            <p class="rotation-oncourt">当前上场：<span id="rotationOnCourtA">—</span></p>
+            <div class="rotation-order">
+              <span class="rotation-order-label">本轮上场顺序</span>
+              <ol id="rotationOrderA" class="rotation-order-list"></ol>
+            </div>
+          </div>
+          <div class="rotation-team rotation-team-b">
+            <p class="rotation-team-name" id="rotationTeamBName">红队</p>
+            <p class="rotation-round" id="rotationRoundB">第 1 轮</p>
+            <p class="rotation-oncourt">当前上场：<span id="rotationOnCourtB">—</span></p>
+            <div class="rotation-order">
+              <span class="rotation-order-label">本轮上场顺序</span>
+              <ol id="rotationOrderB" class="rotation-order-list"></ol>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <div class="status-row">
         <p id="statusText">等待本局胜者出现</p>
@@ -129,7 +202,8 @@
   <div id="swapPromptModal" class="swap-prompt-modal hidden" role="dialog" aria-modal="true" aria-labelledby="swapPromptTitle">
     <div class="swap-prompt-content">
       <h2 id="swapPromptTitle">换人提示</h2>
-      <p>任意一队已到 10 分，请先换人后继续比赛。</p>
+      <p id="swapPromptDefaultMsg">任意一队已到 10 分，请先换人后继续比赛。</p>
+      <div id="swapPromptRotationInfo" class="swap-rotation-info hidden"></div>
       <button id="swapPromptContinueBtn" type="button" class="btn primary">继续比赛</button>
     </div>
   </div>
@@ -139,6 +213,33 @@
       <h2 id="comebackDrawTitle">逆风抽卡！</h2>
       <p id="comebackDrawMsg"></p>
       <button id="comebackDrawContinueBtn" type="button" class="btn primary">继续比赛</button>
+    </div>
+  </div>
+
+  <div id="swapCardModal" class="swap-prompt-modal hidden" role="dialog" aria-modal="true" aria-labelledby="swapCardTitle">
+    <div class="swap-prompt-content swap-card-content">
+      <h2 id="swapCardTitle">换人卡 · 特殊换人</h2>
+      <p class="swap-card-hint">不受 10 分限制。先选择换哪一队，再选择换下与上场的球员；新上场球员将排在第二位。</p>
+
+      <div class="swap-card-team-toggle">
+        <button type="button" class="btn tertiary" id="swapCardSelfBtn" data-target="self">换本方</button>
+        <button type="button" class="btn tertiary" id="swapCardOppBtn" data-target="opp">换对方</button>
+      </div>
+
+      <div class="swap-card-section">
+        <p class="swap-card-label">换下（场上球员）</p>
+        <div id="swapCardOffOptions" class="swap-card-options"></div>
+      </div>
+
+      <div class="swap-card-section">
+        <p class="swap-card-label">上场（场下球员，可选已上过的球员）</p>
+        <div id="swapCardOnOptions" class="swap-card-options"></div>
+      </div>
+
+      <div class="swap-card-actions">
+        <button id="swapCardConfirmBtn" type="button" class="btn primary" disabled>确认换人</button>
+        <button id="swapCardCancelBtn" type="button" class="btn tertiary">放弃换人</button>
+      </div>
     </div>
   </div>
 
